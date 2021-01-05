@@ -1,0 +1,91 @@
+#!/bin/bash
+# 11/1/2018
+# WB4BXO - Steve Mobley
+# No copyright, use as you wish.
+
+# pick up hamvoip environment settings
+. /usr/local/etc/allstar.env
+echo "$(date "+%F %T")- $0 $*">>/dev/shm/remote.log
+
+# parse the command line input
+INPUT=$1
+CMD=${INPUT:0:1}
+DATA=${INPUT:1}
+
+# have to give the node number to say the frequency out off
+# set it expicitly here or...
+#NODE=46874
+# use the one defined as NODE1 in teh allstar env
+NODE=${NODE1}
+
+# Define the serial port here.
+# This is the onboard TTL (3.3V) serial adapter available on the 40 pin header
+# You can use it for TTL level stuff but must disable it from use by the OS first.
+#SERIAL="/dev/ttyAMA0"
+# Usually it is /dev/ttyUSB0 for the first USB adapter
+SERIAL="/dev/ttyUSB0"
+# SERIAL="/dev/ttyUSB1"
+
+# set for the baud you have your radio configured to
+BAUD="9600"
+
+# generic, should work on hf rigs too
+function SayFreq () {
+    FREQ=$(TM271A-ctrl.py freq)
+    FREQLEN=${#FREQ}
+	echo "freq: ${FREQ} - $FREQLEN}" >>/dev/shm/remote.log
+	sleep 2
+    case $FREQLEN in
+    10) #like 0147330000, but we'll ignore the first zero in the 271a
+        speaktext.sh " ${FREQ:1:3}.${FREQ:4:3}.${FREQ:7:3}" ${NODE}
+    ;;
+    9) #like 147330000
+        speaktext.sh " ${FREQ:0:3}.${FREQ:3:3}.${FREQ:6:3}" ${NODE}
+    ;;
+    8) #like 50125000
+        speaktext.sh " ${FREQ:0:2}.${FREQ:2:3}.${FREQ:5:3}" ${NODE}
+    ;;
+    7) #like 3975000
+        speaktext.sh " ${FREQ:0:1}.${FREQ:1:3}.${FREQ:4:3}" ${NODE}
+    ;;
+    6) #like 620000
+        speaktext.sh " ${FREQ:0:3}.${FREQ:3:3}" ${NODE}
+    ;;
+    5) #like 25000
+        speaktext.sh " ${FREQ:0:2}.${FREQ:2:3}" ${NODE}
+    ;;
+    *) #like anything else
+        speaktext.sh " ${FREQ}" ${NODE}
+    ;;
+    esac
+}
+
+# work actually starts here...
+case $CMD in
+	0)	#read frequency back
+        SayFreq
+	;;
+	1)	# vfo freq
+        # enter 631000 to select mem 0
+        TM271A-ctrl.py vfo ${DATA}
+	;;
+	2)	# tone freq
+        # enter 631000 to select mem 0
+        TM271A-ctrl.py tone ${DATA}
+	;;
+	3)	# ctcss freq
+        # enter 631000 to select mem 0
+        TM271A-ctrl.py ctcss ${DATA}
+	;;
+	4) # memory
+        TM271A-ctrl.py mem ${DATA}
+	;;
+	5) # lo power
+		TM271A-ctrl.py pow l
+	;;
+	6) # hi power
+		TM271A-ctrl.py pow h
+	;;
+esac
+
+exit 0

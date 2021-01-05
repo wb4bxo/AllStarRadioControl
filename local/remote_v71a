@@ -1,0 +1,93 @@
+#!/bin/bash
+
+. /usr/local/etc/allstar.env
+#sleep 1
+
+# parse the command line input
+INPUT=$1
+CMD=${INPUT:0:1}
+DATA=${INPUT:1}
+
+# set the radio id for hamlib
+RADIO="234"
+
+# have to give the node number to say the frequency out off
+# set it expicitly here or...
+#NODE=46874
+# use the one defined as NODE1 in teh allstar env
+NODE=${NODE1}
+
+# Define the serial port here.
+# This is the onboard TTL (3.3V) serial adapter available on the 40 pin header
+# You can use it for TTL level stuff but must disable it from use by the OS first.
+#SERIAL="/dev/ttyAMA0"
+# Usually it is /dev/ttyUSB0 for the first USB adapter
+#SERIAL="/dev/ttyUSB0"
+SERIAL="/dev/ttyUSB1"
+
+# set for the baud you have your radio configured to
+BAUD="9600"
+
+# generic, should work on hf rigs too
+function SayFreq () {
+    FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
+    FREQLEN=${#FREQ}
+    case $FREQLEN in
+    9) #like 147330000
+        speaktext.sh " ${FREQ:0:3}.${FREQ:3:3}.${FREQ:6:3}" ${NODE}
+    ;;
+    8) #like 50125000
+        speaktext.sh " ${FREQ:0:2}.${FREQ:2:3}.${FREQ:5:3}" ${NODE}
+    ;;
+    7) #like 3975000
+        speaktext.sh " ${FREQ:0:1}.${FREQ:1:3}.${FREQ:4:3}" ${NODE}
+    ;;
+    6) #like 620000
+        speaktext.sh " ${FREQ:0:3}.${FREQ:3:3}" ${NODE}
+    ;;
+    5) #like 25000
+        speaktext.sh " ${FREQ:0:2}.${FREQ:2:3}" ${NODE}
+    ;;
+    *) #like anything else
+        speaktext.sh " ${FREQ}" ${NODE}
+    ;;
+    esac
+}
+
+# work actually starts here...
+case $CMD in
+	0)	#read frequency back
+        SayFreq
+	;;
+	1)	# select mem,mem,mem
+        # enter 631000 to select mem 0
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V MEM
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} E ${DATA:0}
+        SayFreq
+	;;
+    ### Not enough digits as set up now so uses 4 5 6 and 7 CMD code for MHz
+    ### Enter freq as *635190 to enter 145.190
+    ### Plans are to change this up soon
+	4) #set VFO mode and freq
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFO
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F 144${DATA}000
+        SayFreq
+	;;
+	5) #set VFO mode and freq
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFO
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F 145${DATA}000
+        SayFreq
+	;;
+	6) #set VFO mode and freq
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFO
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F 146${DATA}000
+        SayFreq
+	;;
+	7) #set VFO mode and freq
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFO
+		rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F 147${DATA}000
+        SayFreq
+	;;
+esac
+
+exit 0

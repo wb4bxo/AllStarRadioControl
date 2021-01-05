@@ -1,0 +1,128 @@
+#!/bin/bash
+
+. /usr/local/etc/allstar.env
+#sleep 1
+echo "$(date "+%F %T")- $0 $*">>/dev/shm/remote.log
+
+# parse the command line input
+INPUT=$1
+CMD=${INPUT:0:1}
+DATA=${INPUT:1}
+
+# set the radio id for hamlib
+# IC-7000
+RADIO="360"
+
+# have to give the node number to say the frequency out of
+# set it expicitly here or...
+#NODE=46874
+# use the one defined as NODE1 in the allstar env
+NODE=${NODE1}
+
+# Define the serial port here.
+# This is the onboard TTL (3.3v) serial port available on the 40 pin header
+# You can use it for TTL level stuff but must disable it from use by the OS first.
+#SERIAL="/dev/ttyAMA0"
+# Usually it is /dev/ttyUSB0 for the first USB adapter
+SERIAL="/dev/ttyUSB0"
+# Usually it is /dev/ttyUSB1 for the second USB adapter
+#SERIAL="/dev/ttyUSB1"
+
+# set for the baud you have your radio configured for
+BAUD="9600"
+
+# Wait for both nodes to stop tranmitting
+function WaitNoTx () {
+    sleep 1
+    while [ -f /dev/shm/out1999 ] || [ -f /dev/shm/out46874 ]; do sleep 0.25; done;
+}
+
+# Read the frequency from the radio and speak it.
+# Counts the length to determine how to say it
+# assuming the number is full Hz value
+function SayFreq () {
+    echo "SayFreq"
+    #wait to stop NOT echoing tones but keying
+    WaitNoTx
+    FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
+    echo "FREQ: $FREQ"
+    FREQLEN=${#FREQ}
+    case $FREQLEN in
+    9) #like 147330000
+        speaktext.sh -g " ${FREQ:0:3},${FREQ:3:3}.${FREQ:6:3}" ${NODE}
+    ;;
+    8) #like 50125000
+        speaktext.sh -g " ${FREQ:0:2},${FREQ:2:3}.${FREQ:5:3}" ${NODE}
+    ;;
+    7) #like 3975000
+        speaktext.sh -g " ${FREQ:0:1},${FREQ:1:3}.${FREQ:4:3}" ${NODE}
+    ;;
+    6) #like 620000
+        speaktext.sh -g " ${FREQ:0:3}.${FREQ:3:3}" ${NODE}
+    ;;
+    5) #like 25000
+        speaktext.sh -g " ${FREQ:0:2}.${FREQ:2:3}" ${NODE}
+    ;;
+    *) #like anything else
+        speaktext.sh -g " ${FREQ}" ${NODE}
+    ;;
+    esac
+    #reconnect after speaking finishes
+    (sleep 5; while [ -f /dev/shm/out46874 ];do sleep 1; done; asterisk -rx "rpt fun 46874 *31999" &>/dev/null) &
+    
+}
+
+
+function setRadio () {
+    case $CMD in
+        0) #say freq
+            asterisk -rx "rpt fun 46874 *711999"
+            WaitNoTx
+            SayFreq
+        ;;
+        1)	#select bank,mem,mem
+            asterisk -rx "rpt fun 46874 *711999"
+            WaitNoTx
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} B ${DATA:0:1} E ${DATA:1}
+            SayFreq
+        ;;
+        2)  #step up nnn Hz *622100 steps up 100 Hz (3 digit max)
+            asterisk -rx "rpt fun 46874 *711999"
+            WaitNoTx
+            FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
+            echo ${FREQ}
+            let FREQ=${FREQ}+${DATA}
+            echo ${FREQ}
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F ${FREQ}
+            SayFreq
+        ;;
+        3)  #step down nnn Hz - *623010 steps down 10 Hz (3 digit max)
+            asterisk -rx "rpt fun 46874 *711999"
+            WaitNoTx
+            FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
+            let FREQ=$FREQ-${DATA}
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F ${FREQ}
+            SayFreq
+        ;;
+        4)  #LSB mode (IC-7000 requires filter width with mode)
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M LSB 2400
+        ;;
+        5)  #USB mode (IC-7000 requires filter width with mode)
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M USB 2400
+        ;;
+        6)  #FM mode (IC-7000 requires filter width with mode)
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M FM 15000
+        ;;
+        7)  #AM mode (IC-7000 requires filter width with mode)
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M AM 6000
+        ;;
+        9) #set squelch
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} L SQL ${DATA:0:1}.${DATA:1}
+        ;;
+    esac
+}
+
+# work actually starts here...
+setRadio
+
+exit 0
