@@ -34,13 +34,15 @@ SERIAL="/dev/ttyUSB0"
 BAUD="19200"
 
 # Wait for radio node to stop tranmitting
-function WaitNoTx () {
-    echo "WaitNoTx">>/dev/shm/remote.log
+function DiscRadioWaitNoTx () {
+    echo "DiscRadioWaitNoTx">>/dev/shm/remote.log
+    asterisk -rx "rpt fun 46874 *711999"
+    asterisk -rx "rpt fun 46874 *11999"
     sleep 1
     while [ -f /dev/shm/out1999 ]; do
         sleep 0.5
     done;
-    echo "WaitNoTx return">>/dev/shm/remote.log
+    echo "DiscRadioWaitNoTx return">>/dev/shm/remote.log
 }
 
 function SetDigital () {
@@ -71,6 +73,7 @@ function SetDigital () {
 # Increment squelch until closed then add last argument as fudge.
 function AutoSquelch () {
     echo "AutoSquelch">>/dev/shm/remote.log
+    asterisk -rx "rpt fun 46874 *21999"
     local FUDGE=$1
     local SQL_LEVEL=0
     echo "Searching for threshold..."
@@ -84,7 +87,8 @@ function AutoSquelch () {
     SQL_LEVEL=$(echo "scale=2; ${SQL_LEVEL}+${FUDGE}/100" | bc -l)
     echo "Setting squelch to $SQL_LEVEL"
     rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} L SQL ${SQL_LEVEL}
-    echo "AutoSquelch return">>/dev/shm/remote.log
+    echo "AutoSquelch return ${SQL_LEVEL}">>/dev/shm/remote.log
+    asterisk -rx "rpt fun 46874 *11999"
     
 }
 
@@ -97,7 +101,6 @@ function SayFreq () {
     #wait to stop NOT echoing tones but keying
     asterisk -rx "rpt fun 46874 *711999"
     asterisk -rx "rpt fun 46874 *11999"
-    WaitNoTx
     FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
     echo "FREQ: $FREQ"
     FREQLEN=${#FREQ}
@@ -122,17 +125,18 @@ function SayFreq () {
     ;;
     esac
     #reconnect after speaking finishes
-    (sleep 5; while [  -f /dev/shm/out1999 ] || -f /dev/shm/out46874 ];do sleep 1; done; asterisk -rx "rpt fun 46874 *31999" &>/dev/null) &
+    (sleep 5; while [ -f /dev/shm/out46874 ];do sleep 1; done; asterisk -rx "rpt fun 46874 *31999" &>/dev/null) &
     echo "SayFreq return">>/dev/shm/remote.log
 }
 
 function SetRadio () {
+    DiscRadioWaitNoTx
     case $CMD in
         0) #say freq
             SayFreq
         ;;
         1)	#select bank,mem,mem
-            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} B ${DATA:0:1} E ${DATA:1}
+            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V MEM B ${DATA:0:1} E ${DATA:1}
             SayFreq
         ;;
         2)  #step up nnn Hz *622100 steps up 100 Hz (3 digit max)
@@ -161,8 +165,24 @@ function SetRadio () {
         7)  #AM mode (IC-7000 requires filter width with mode)
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M AM 6000
         ;;
-        8)  #Antenna Tune
-            rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} G TUNE
+        8)  #Misc functions
+            SUB_CMD=${DATA:0:1}
+            SUB_DATA=${DATA:1}
+            echo "Misc: >${SUB_CMD}< >${SUB_DATA}<">>/dev/shm/remote.log
+            case $SUB_CMD in
+                0)  #Select VFO A or B (0 or 1)
+                    rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFO
+                    if [ "${SUB_DATA:0:1}" == "1" ] ; then
+                        rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFOA
+                    elif [ "${SUB_DATA:0:1}" == "2" ] ; then
+                        rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V VFOB
+                    fi
+                ;;
+                9)  #tuner set
+                    echo "tune"
+                    rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} G TUNE
+                ;;
+            esac
         ;;
         9) #set squelch
             if [ "${DATA:0:1}" == "0" ] || [ "$DATA:0:1}" == "1" ]; then
@@ -175,10 +195,11 @@ function SetRadio () {
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} ${DATA}
         ;;
     esac
+    SetDigital true
+    asterisk -rx "rpt fun 46874 *31999"
 }
 
 # work actually starts here...
 SetRadio
-SetDigital true
 
 exit 0
