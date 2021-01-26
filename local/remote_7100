@@ -2,7 +2,7 @@
 
 . /usr/local/etc/allstar.env
 #sleep 1
-echo "$(date "+%F %T")- $0 $*">>/dev/shm/remote.log
+echo "$(date '+%F %T')- $0 $*">>/dev/shm/remote.log
 
 # parse the command line input
 INPUT=$1
@@ -15,11 +15,14 @@ DATA=${INPUT:1}
 # IC-7100
 RADIO="3070"
 
-# have to give the node number to say the frequency out of
+# have to give the node number to use asterisk commands
 # set it expicitly here or...
-#NODE=46874
+#ACCESS_NODE=46874
 # use the one defined as NODE1 in the allstar env
-NODE=${NODE1}
+ACCESS_NODE=${NODE1}
+
+# Define the radio node here. Should be on same CPU
+RADIO_NODE="1700"
 
 # Define the serial port here.
 # This is the onboard TTL (3.3v) serial port available on the 40 pin header
@@ -35,18 +38,18 @@ BAUD="19200"
 
 # Wait for radio node to stop tranmitting
 function DiscRadioWaitNoTx () {
-    echo "DiscRadioWaitNoTx">>/dev/shm/remote.log
-    asterisk -rx "rpt fun 46874 *711999"
-    asterisk -rx "rpt fun 46874 *11999"
+    echo "$(date '+%F %T')-DiscRadioWaitNoTx">>/dev/shm/remote.log
+    asterisk -rx "rpt fun ${ACCESS_NODE} *71${RADIO_NODE}"
+    asterisk -rx "rpt fun ${ACCESS_NODE} *1${RADIO_NODE}"
     sleep 1
-    while [ -f /dev/shm/out1999 ]; do
+    while [ -f /dev/shm/out${RADIO_NODE} ]; do
         sleep 0.5
     done;
-    echo "DiscRadioWaitNoTx return">>/dev/shm/remote.log
+    echo "$(date '+%F %T')-DiscRadioWaitNoTx return">>/dev/shm/remote.log
 }
 
 function SetDigital () {
-    echo "SetDigital">>/dev/shm/remote.log
+    echo "$(date '+%F %T')-SetDigital">>/dev/shm/remote.log
     local myRTN=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} m)
 #   echo $myRTN
     local myMODE=$(echo ${myRTN} | cut -d' ' -f1)
@@ -55,25 +58,25 @@ function SetDigital () {
     echo "Filter: ${myFILTER}"
     if [ "D-STAR" == ${myMODE} ]; then
         # which means can't access D-STAR remotely either
-        echo "SetDigital return 1">>/dev/shm/remote.log
+        echo "$(date '+%F %T')-SetDigital return 1">>/dev/shm/remote.log
         return
     fi
     if [ "PKT" == "${myMODE:0:3}" ]; then
         if ! $1; then
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M ${myMODE:3} ${myFILTER}
         fi
-        echo "SetDigital return 2">>/dev/shm/remote.log
+        echo "$(date '+%F %T')-SetDigital return 2">>/dev/shm/remote.log
         return
     elif $1; then
         rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M "PKT"${myMODE} ${myFILTER}
     fi
-    echo "SetDigital return 3">>/dev/shm/remote.log
+    echo "$(date '+%F %T')-SetDigital return 3">>/dev/shm/remote.log
 }
 
 # Increment squelch until closed then add last argument as fudge.
 function AutoSquelch () {
-    echo "AutoSquelch">>/dev/shm/remote.log
-    asterisk -rx "rpt fun 46874 *21999"
+    echo "$(date '+%F %T')-AutoSquelch">>/dev/shm/remote.log
+    asterisk -rx "rpt fun ${ACCESS_NODE} *2${RADIO_NODE}"
     local FUDGE=$1
     local SQL_LEVEL=0
     echo "Searching for threshold..."
@@ -81,14 +84,14 @@ function AutoSquelch () {
         SQL_LEVEL=$(echo "scale=2;${i}/100" | bc -l)
 #        echo $SQL_LEVEL
         rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} L SQL ${SQL_LEVEL}
-        [ -f /dev/shm/in1999 ] || break
+        [ -f /dev/shm/in${RADIO_NODE} ] || break
     done
     # add fudge
     SQL_LEVEL=$(echo "scale=2; ${SQL_LEVEL}+${FUDGE}/100" | bc -l)
     echo "Setting squelch to $SQL_LEVEL"
     rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} L SQL ${SQL_LEVEL}
-    echo "AutoSquelch return ${SQL_LEVEL}">>/dev/shm/remote.log
-    asterisk -rx "rpt fun 46874 *11999"
+    echo "$(date '+%F %T')-AutoSquelch return ${SQL_LEVEL}">>/dev/shm/remote.log
+    asterisk -rx "rpt fun ${ACCESS_NODE} *1${RADIO_NODE}"
     
 }
 
@@ -96,40 +99,41 @@ function AutoSquelch () {
 # Counts the length to determine how to say it
 # assuming the number is full Hz value
 function SayFreq () {
-    echo "SayFreq">>/dev/shm/remote.log
+    echo "$(date '+%F %T')-SayFreq">>/dev/shm/remote.log
     echo "SayFreq"
     #wait to stop NOT echoing tones but keying
-    asterisk -rx "rpt fun 46874 *711999"
-    asterisk -rx "rpt fun 46874 *11999"
+    asterisk -rx "rpt fun ${ACCESS_NODE} *71${RADIO_NODE}"
+    asterisk -rx "rpt fun ${ACCESS_NODE} *1${RADIO_NODE}"
     FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
     echo "FREQ: $FREQ"
     FREQLEN=${#FREQ}
     case $FREQLEN in
     9) #like 147330000
-        speaktext.sh -g " ${FREQ:0:3},${FREQ:3:3}.${FREQ:6:3}" ${NODE}
+        speaktext.sh -g " ${FREQ:0:3},${FREQ:3:3}.${FREQ:6:3}" ${ACCESS_NODE}
     ;;
     8) #like 50125000
-        speaktext.sh -g " ${FREQ:0:2},${FREQ:2:3}.${FREQ:5:3}" ${NODE}
+        speaktext.sh -g " ${FREQ:0:2},${FREQ:2:3}.${FREQ:5:3}" ${ACCESS_NODE}
     ;;
     7) #like 3975000
-        speaktext.sh -g " ${FREQ:0:1},${FREQ:1:3}.${FREQ:4:3}" ${NODE}
+        speaktext.sh -g " ${FREQ:0:1},${FREQ:1:3}.${FREQ:4:3}" ${ACCESS_NODE}
     ;;
     6) #like 620000
-        speaktext.sh -g " ${FREQ:0:3}.${FREQ:3:3}" ${NODE}
+        speaktext.sh -g " ${FREQ:0:3}.${FREQ:3:3}" ${ACCESS_NODE}
     ;;
     5) #like 25000
-        speaktext.sh -g " ${FREQ:0:2}.${FREQ:2:3}" ${NODE}
+        speaktext.sh -g " ${FREQ:0:2}.${FREQ:2:3}" ${ACCESS_NODE}
     ;;
     *) #like anything else
-        speaktext.sh -g " ${FREQ}" ${NODE}
+        speaktext.sh -g " ${FREQ}" ${ACCESS_NODE}
     ;;
     esac
     #reconnect after speaking finishes
-    (sleep 5; while [ -f /dev/shm/out46874 ];do sleep 1; done; asterisk -rx "rpt fun 46874 *31999" &>/dev/null) &
-    echo "SayFreq return">>/dev/shm/remote.log
+    (sleep 2; while [ -f /dev/shm/out${ACCESS_NODE} ];do sleep 1; done; asterisk -rx "rpt fun ${ACCESS_NODE} *3${RADIO_NODE}";  echo "$(date '+%F %T')-SayFreq delayed connect">>/dev/shm/remote.log) &
+    echo "$(date '+%F %T')-SayFreq exit">>/dev/shm/remote.log
 }
 
 function SetRadio () {
+    echo "$(date '+%F %T')-SetRadio enter">>/dev/shm/remote.log
     DiscRadioWaitNoTx
     case $CMD in
         0) #say freq
@@ -137,7 +141,7 @@ function SetRadio () {
         ;;
         1)	#select bank,mem,mem
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} V MEM B ${DATA:0:1} E ${DATA:1}
-            SayFreq
+            # SayFreq
         ;;
         2)  #step up nnn Hz *622100 steps up 100 Hz (3 digit max)
             FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
@@ -145,13 +149,13 @@ function SetRadio () {
             let FREQ=${FREQ}+${DATA}
             echo ${FREQ}
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F ${FREQ}
-            SayFreq
+            # SayFreq
         ;;
         3)  #step down nnn Hz - *623010 steps down 10 Hz (3 digit max)
             FREQ=$(rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} f)
             let FREQ=$FREQ-${DATA}
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} F ${FREQ}
-            SayFreq
+            # SayFreq
         ;;
         4)  #LSB mode (IC-7000 requires filter width with mode)
             rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} M LSB 2400
@@ -196,7 +200,8 @@ function SetRadio () {
         ;;
     esac
     SetDigital true
-    asterisk -rx "rpt fun 46874 *31999"
+    asterisk -rx "rpt fun ${ACCESS_NODE} *3${RADIO_NODE}"
+    echo "$(date '+%F %T')-SetRadio exit">>/dev/shm/remote.log
 }
 
 # work actually starts here...

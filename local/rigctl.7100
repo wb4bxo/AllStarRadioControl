@@ -1,0 +1,28 @@
+#!/bin/bash
+
+. /usr/local/etc/allstar.env
+#sleep 1
+echo "$(date "+%F %T")- $0 $*">>/dev/shm/remote.log
+
+# parse the command line input
+INPUT=$*
+
+# set the radio id for hamlib
+# IC-7000
+#RADIO="360"
+# IC-7100
+RADIO="3070"
+
+# Define the serial port here.
+# This is the onboard TTL (3.3v) serial port available on the 40 pin header
+# You can use it for TTL level stuff but must disable it from use by the OS first.
+#SERIAL="/dev/ttyAMA0"
+# Usually it is /dev/ttyUSB0 for the first USB adapter
+#SERIAL="/dev/ttyUSB0"
+# Usually it is /dev/ttyUSB1 for the second USB adapter
+SERIAL="/dev/ttyUSB0"
+
+# set for the baud you have your radio configured for
+BAUD="19200"
+
+rigctl -m ${RADIO} -r ${SERIAL} -s ${BAUD} $INPUT
